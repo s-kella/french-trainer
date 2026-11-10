@@ -2033,7 +2033,10 @@ function renderSummary(isFinal){
   // today's unfixed mistakes get first refusal over free practice — see
   // errorKeysInScope. Finishing that pass clears them (state.daily.reviewedErrors),
   // so this naturally falls through to the regular practice-more button.
-  var pendingErrors = (isFinal && remaining===0) ? errorKeysInScope() : [];
+  // isFinal alone, not also remaining===0: tapping the title during free
+  // practice or error review gives a final summary while that pass still
+  // has cards queued — unfixed mistakes must still win the button there.
+  var pendingErrors = isFinal ? errorKeysInScope() : [];
   // This line used to live only inside emptyText, so it vanished whenever
   // the final summary followed right after finishing a batch (batchSeen>0)
   // — exactly the normal case of reaching "На сегодня всё" — instead of
