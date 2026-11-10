@@ -306,13 +306,23 @@ h1,h2,h3{font-family:"Fraunces",Georgia,serif;text-wrap:balance;margin:0;}
 .chip-review{border-color:var(--accent-2);}
 @media (prefers-reduced-motion: reduce){ .progressbar > div{transition:none;} }
 
-.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px;padding-block:28px;}
+/* One even rhythm for the summary screen: paragraphs carry no margins of
+   their own (in a flex column they don't collapse, so the browser's
+   default 1em was stacking on top of the gap and spacing text unevenly),
+   and the action button gets a little extra room to separate it from the
+   text above. */
+.empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding-block:28px;}
 .empty svg{width:46px;height:46px;color:var(--accent);}
-.empty p{color:var(--ink-muted);font-size:.92rem;max-width:34ch;}
+.empty p{color:var(--ink-muted);font-size:.92rem;max-width:34ch;margin:0;text-wrap:balance;}
+.empty .btn{flex:none;margin-top:8px;}
 .empty p.hint-wide{max-width:40ch;}
 
-.summary-stats{display:flex;gap:28px;justify-content:center;flex-wrap:wrap;}
-.summary-stat{display:flex;flex-direction:column;align-items:center;gap:2px;}
+/* margin-top: the numbers are their own group, set apart from the title/text
+   above (12px gap inside a group, 20px between groups). Each stat gets the
+   same min-width so a longer caption ("слов сегодня") doesn't widen its
+   column and knock the pair off-center. */
+.summary-stats{display:flex;gap:20px;justify-content:center;flex-wrap:wrap;margin-top:8px;}
+.summary-stat{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:6.5rem;}
 .summary-stat b{font-family:"Fraunces",Georgia,serif;font-size:1.9rem;font-weight:600;color:var(--ink);line-height:1;}
 .summary-stat span{font-size:.76rem;color:var(--ink-muted);}
 .summary-footer{font-size:.84rem;color:var(--ink-muted);margin:0;}
@@ -2020,8 +2030,16 @@ function renderSummary(isFinal){
         (batchLearned ? '<div class="summary-stat"><b>+'+batchLearned+'</b><span>выучено</span></div>' : '')+
       '</div>'
     : '';
+  // With no batch just answered (title tap, reload) the day totals are the
+  // only result on screen, so they take the big-number look themselves;
+  // after a batch they stay a quiet footer under the batch's own numbers.
   var dayFooter = (dayWords && !reviewingErrors)
-    ? '<p class="summary-footer">Сегодня: '+dayWords+' '+pluralRu(dayWords,["слово","слова","слов"])+', '+dayPct+'% правильно</p>'
+    ? (batchSeen
+      ? '<p class="summary-footer">Сегодня: '+dayWords+' '+pluralRu(dayWords,["слово","слова","слов"])+', '+dayPct+'% правильно</p>'
+      : '<div class="summary-stats">'+
+          '<div class="summary-stat"><b>'+dayWords+'</b><span>'+pluralRu(dayWords,["слово","слова","слов"])+' сегодня</span></div>'+
+          '<div class="summary-stat"><b>'+dayPct+'%</b><span>правильно</span></div>'+
+        '</div>')
     : '';
   var remainingLine = (!isFinal && remaining>0)
     ? (reviewingErrors
@@ -2043,7 +2061,11 @@ function renderSummary(isFinal){
   // only the rarer "reopened the summary with nothing just answered" case.
   // Surfacing the count here, independent of batchSeen, is what actually
   // explains the "Повторить ошибки" button underneath.
-  var emptyText = !batchSeen
+  // Skipped when the day's totals show as big numbers (no batch, some words
+  // answered, not reviewing): the title already says it, and a third
+  // centered line of a different width made the stack's edges zigzag.
+  var dayStatsBig = !batchSeen && dayWords && !reviewingErrors;
+  var emptyText = (!batchSeen && !dayStatsBig)
     ? (pendingErrors.length
       ? '<p class="hint hint-wide">Сегодняшние слова изучены.</p>'
       : '<p class="hint">Пока нечего повторять — всё уже отвечено сегодня.</p>')
@@ -2064,7 +2086,7 @@ function renderSummary(isFinal){
       ? '<button class="btn primary" id="continueBtn">Продолжить</button>'
       : (pendingErrors.length
         ? '<button class="btn primary" id="reviewErrorsBtn">Повторить ошибки</button>'
-        : '<button class="btn primary" id="practiceMoreBtn">Тренироваться ещё (вне графика)</button>'))+
+        : '<button class="btn primary" id="practiceMoreBtn">Тренироваться вне графика</button>'))+
   '</div>';
   cardArea.innerHTML = html;
   var continueBtn = document.getElementById("continueBtn");
