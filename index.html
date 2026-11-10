@@ -299,6 +299,12 @@ h1,h2,h3{font-family:"Fraunces",Georgia,serif;text-wrap:balance;margin:0;}
 
 .progressbar{height:4px;border-radius:999px;background:var(--surface-2);overflow:hidden;}
 .progressbar > div{height:100%;background:var(--accent);transition:width .25s ease;}
+/* Error-review mode: the progress bar fills by fixed mistakes in amber,
+   and the "Сегодня" chip turns into an amber-outlined "Ошибки fixed/total"
+   chip (see renderStats) — same language as the other chips. */
+.progressbar.review > div{background:var(--accent-2);}
+.chip-review{border-color:var(--accent-2);}
+@media (prefers-reduced-motion: reduce){ .progressbar > div{transition:none;} }
 
 .empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:14px;padding-block:28px;}
 .empty svg{width:46px;height:46px;color:var(--accent);}
@@ -392,7 +398,7 @@ footer.note{font-size:.76rem;color:var(--ink-muted);text-align:center;padding-to
     </div>
   </div>
 
-  <div class="progressbar"><div id="progressFill" style="width:0%"></div></div>
+  <div class="progressbar" id="progressBar"><div id="progressFill" style="width:0%"></div></div>
 
   <div class="card" id="cardArea"></div>
 
@@ -1250,12 +1256,36 @@ function dailyCleanInScope(){
 // which deliberately never touches box/due progress) specifically so that
 // closing and reopening the trainer mid-review doesn't un-clear words she
 // already got right — see the write site in finishWordRound.
-function errorKeysInScope(){
+// Every word answered with a mistake today in the current scope, fixed in
+// the error-review pass or not. Built only from the saved daily record, so
+// it's the same after a reload or on another device — the stable "из M" of
+// the error-review progress.
+function todaysErrorKeysInScope(){
   var ids = activeDeckIds();
   return Object.keys(state.daily.words).filter(function(k){
     return ids.some(function(id){ return k.indexOf(id+"::")===0; })
-      && !state.daily.cleanWords[k] && !state.daily.reviewedErrors[k];
+      && !state.daily.cleanWords[k];
   });
+}
+// The ones from above not fixed yet in the error-review pass.
+function errorKeysInScope(){
+  return todaysErrorKeysInScope().filter(function(k){ return !state.daily.reviewedErrors[k]; });
+}
+function markErrorReviewed(entry){
+  var errKey = entryProgKey(entry);
+  state.daily.reviewedErrors[errKey] = true;
+  var reviewPatch = {daily:{date: state.daily.date, reviewedErrors:{}}};
+  reviewPatch.daily.reviewedErrors[errKey] = true;
+  patchState(reviewPatch);
+  updateProgressBar();
+}
+function startErrorReview(){
+  freePractice = true;
+  reviewingErrors = true;
+  queue = errorEntries();
+  startBatch();
+  renderStats();
+  nextWord();
 }
 function errorEntries(){
   var want = {};
@@ -1396,7 +1426,15 @@ function renderStats(){
   var dueToday = frozenTotal!==undefined ? frozenTotal : (doneToday + queue.length);
   statsRow.innerHTML =
     '<div class="chip chip-click" id="chipLearned">Выучено <b>'+learnedCount+'/'+total+'</b></div>'+
-    '<div class="chip chip-click" id="chipToday">Сегодня <b>'+doneToday+'/'+dueToday+'</b></div>';
+    (reviewingErrors
+      // "Сегодня" is always full by the time error review runs, so its slot
+      // shows the review's own progress instead: fixed / all of today's.
+      ? (function(){
+          var errTotal = todaysErrorKeysInScope().length;
+          var errFixed = errTotal - errorKeysInScope().length;
+          return '<div class="chip chip-review" id="chipErrors">Ошибки <b>'+errFixed+'/'+errTotal+'</b></div>';
+        })()
+      : '<div class="chip chip-click" id="chipToday">Сегодня <b>'+doneToday+'/'+dueToday+'</b></div>');
   updateErrorsTopBtn();
 }
 
@@ -1407,13 +1445,7 @@ function renderStats(){
 function updateErrorsTopBtn(){
   errorsTopBtn.hidden = reviewingErrors || errorKeysInScope().length===0;
 }
-errorsTopBtn.onclick = function(){
-  freePractice = true;
-  reviewingErrors = true;
-  queue = errorEntries();
-  startBatch();
-  nextWord();
-};
+errorsTopBtn.onclick = startErrorReview;
 
 // Delegated (not rebound on every renderStats() call, which replaces these
 // chips' innerHTML constantly during a session): tapping "Выучено" opens the
@@ -1427,7 +1459,18 @@ statsRow.addEventListener("click", function(e){
 });
 
 function updateProgressBar(){
-  var pct = batchTotal ? Math.round((batchSeen/batchTotal)*100) : 0;
+  var pct;
+  if(reviewingErrors){
+    // Counted by distinct words from the saved daily record, not
+    // queue.length — a missed word goes back into the queue but is still
+    // just one error, and this way a reload doesn't reset the bar.
+    var total = todaysErrorKeysInScope().length;
+    var fixed = total - errorKeysInScope().length;
+    pct = total ? Math.round((fixed/total)*100) : 100;
+  } else {
+    pct = batchTotal ? Math.round((batchSeen/batchTotal)*100) : 0;
+  }
+  document.getElementById("progressBar").classList.toggle("review", reviewingErrors);
   progressFill.style.width = pct+"%";
 }
 
@@ -1575,7 +1618,8 @@ function renderCard(){
     : (current.kind==="conjug" && !conjugShowsRussian(current) ? current.word[2] : null);
 
   var html = ''+
-    '<div class="eyebrow"><span>'+promptEyebrow(current)+(freePractice?' · свободно':'')+'</span><span class="box-dots">'+dots+'</span></div>'+
+    '<div class="eyebrow"><span>'+promptEyebrow(current)+
+      (freePractice && !reviewingErrors ? ' · свободно' : '')+'</span><span class="box-dots">'+dots+'</span></div>'+
     '<div class="ruword">'+promptText(current)+'</div>'+
     (translationLine ? '<div class="hint" style="margin-top:-10px">'+translationLine+'</div>' : '')+
     '<div class="'+(isMatching?'match-wrap':('fields-row'+(isConjugType?' conjug-grid':'')))+'">'+fieldsHtml+'</div>'+
@@ -1600,6 +1644,14 @@ function renderCard(){
         var patch = {daily:{date: state.daily.date, cleanWords:{}}};
         patch.daily.cleanWords[key] = true;
         patchState(patch);
+      }
+      // Error review: finishWordRound() already put this word back into the
+      // queue as a miss — a typo means it was actually fixed, so take it
+      // back out and count it as reviewed, same as a clean answer.
+      if(reviewingErrors){
+        var qi = queue.indexOf(current);
+        if(qi>=0) queue.splice(qi, 1);
+        markErrorReviewed(current);
       }
       renderStats();
       // one click should be enough: score it as clean and move straight on,
@@ -1866,11 +1918,7 @@ function finishWordRound(){
   // next card, so it isn't just rote-repeated back-to-back.
   if(reviewingErrors){
     if(clean){
-      var errKey = entryProgKey(current);
-      state.daily.reviewedErrors[errKey] = true;
-      var reviewPatch = {daily:{date: state.daily.date, reviewedErrors:{}}};
-      reviewPatch.daily.reviewedErrors[errKey] = true;
-      patchState(reviewPatch);
+      markErrorReviewed(current);
     } else {
       var pos = queue.length ? 1 + Math.floor(Math.random()*queue.length) : 0;
       queue.splice(pos, 0, current);
@@ -2019,13 +2067,7 @@ function renderSummary(isFinal){
   var continueBtn = document.getElementById("continueBtn");
   if(continueBtn) continueBtn.onclick = function(){ startBatch(); nextWord(); };
   var errorsBtn = document.getElementById("reviewErrorsBtn");
-  if(errorsBtn) errorsBtn.onclick = function(){
-    freePractice = true;
-    reviewingErrors = true;
-    queue = errorEntries();
-    startBatch();
-    nextWord();
-  };
+  if(errorsBtn) errorsBtn.onclick = startErrorReview;
   var practiceBtn = document.getElementById("practiceMoreBtn");
   if(practiceBtn) practiceBtn.onclick = function(){
     freePractice = true;
@@ -2034,6 +2076,7 @@ function renderSummary(isFinal){
     queue.forEach(assignDirection);
     shuffle(queue);
     startBatch();
+    renderStats();
     nextWord();
   };
 }
@@ -2068,6 +2111,7 @@ function startSession(){
   }
   updateFooterNote();
   startBatch();
+  updateProgressBar();
   renderStats();
   if(queue.length===0){ renderSummary(true); return; }
   nextWord();
