@@ -257,7 +257,7 @@ h1,h2,h3{font-family:"Fraunces",Georgia,serif;text-wrap:balance;margin:0;}
 .type-input:focus{outline:none;border-color:var(--accent-2);}
 .type-input.correct{border-color:var(--success);background:var(--success-bg);}
 .type-input.wrong{border-color:var(--danger);background:var(--danger-bg);}
-.reveal-label{font-size:.82rem;color:var(--accent-2);font-style:italic;}
+.reveal-label{font-size:.82rem;color:var(--accent-2);}
 .accent-row{display:flex;flex-wrap:wrap;gap:5px;}
 .accent-key{
   width:26px;height:26px;border-radius:7px;border:1px solid var(--border);background:var(--surface);
@@ -1891,7 +1891,15 @@ cardArea.addEventListener("click", function(e){
 // also meant to advance to the next word.
 document.addEventListener("keydown", function(e){
   if(e.key!=="Enter" || e.defaultPrevented) return;
-  var advanceBtn = document.getElementById("advanceBtn") || document.getElementById("continueBtn");
+  // Not while typing in a modal (deck editor textarea etc.) — the card
+  // behind it would otherwise get advanced.
+  var t = e.target;
+  if(t && t.closest && t.closest(".overlay")) return;
+  // Whatever the screen's one primary button is: "Дальше"/"Итог" on a card,
+  // "Продолжить" between batches, "Повторить ошибки" or
+  // "Тренироваться вне графика" on the end-of-day screen.
+  var advanceBtn = document.getElementById("advanceBtn") || document.getElementById("continueBtn") ||
+    document.getElementById("reviewErrorsBtn") || document.getElementById("practiceMoreBtn");
   if(advanceBtn){ e.preventDefault(); advanceBtn.click(); }
 });
 
